@@ -1,0 +1,1761 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EduRace Grand Prix - AI Educational Racing Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Inter:wght@500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #14532d;
+        }
+        .font-game {
+            font-family: 'Fredoka', sans-serif;
+        }
+        /* Custom scrollbar for leaderboards/modals */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+        }
+        
+        /* Answer Button 3D Bubble Effect */
+        .btn-answer {
+            transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.3);
+        }
+        .btn-answer:active:not(:disabled) {
+            transform: translateY(4px);
+            box-shadow: 0 0px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        /* Question Screen Glow Effect like the reference image */
+        .question-board {
+            background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
+            box-shadow: inset 0 0 18px rgba(59, 130, 246, 0.5), 0 4px 10px rgba(0,0,0,0.4);
+        }
+
+        @keyframes Shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-6px); }
+            40%, 80% { transform: translateX(6px); }
+        }
+        .animate-shake {
+            animation: Shake 0.35s ease-in-out;
+        }
+
+        @keyframes PopIn {
+            0% { transform: scale(0.85); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop {
+            animation: PopIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen relative flex flex-col justify-between">
+
+    <!-- MAIN RACE CANVAS -->
+    <canvas id="raceCanvas" class="absolute inset-0 w-full h-full z-0 block"></canvas>
+
+    <!-- TOP HUD BAR (Visible during race) -->
+    <div id="topHud" class="hidden relative z-10 w-full px-3 py-2 flex flex-wrap items-start justify-between gap-2 bg-gradient-to-b from-black/75 via-black/40 to-transparent pointer-events-none">
+        <!-- Left Info: Controls -->
+        <div class="flex flex-col gap-2 pointer-events-auto">
+            <div class="flex items-center gap-2">
+                <button onclick="confirmBackToMenu()" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-xl font-bold text-xs sm:text-sm shadow-lg flex items-center gap-1.5 border border-red-400 transition active:scale-95">
+                    <i class="fas fa-home"></i> <span class="hidden sm:inline">Menu</span>
+                </button>
+                <button onclick="toggleSound()" id="soundBtn" title="Suara" class="bg-slate-800/90 hover:bg-slate-700 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg border border-slate-600 transition active:scale-95">
+                    <i class="fas fa-volume-up" id="soundIcon"></i>
+                </button>
+                <button onclick="toggleFullscreen()" id="fullscreenHudBtn" title="Layar Penuh (Fullscreen)" class="bg-slate-800/90 hover:bg-slate-700 text-white w-9 h-9 rounded-xl flex items-center justify-center shadow-lg border border-slate-600 transition active:scale-95">
+                    <i class="fas fa-expand" id="fullscreenHudIcon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Info: Keyboard Shortcut Hint & Live Standings (under top-right minimap) -->
+        <div class="flex items-start gap-2 ml-auto">
+            <div class="hidden xl:flex items-center gap-2 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700 text-[11px] text-slate-300 pointer-events-auto">
+                <i class="fas fa-keyboard text-amber-400"></i>
+                <span>Pintasan Keyboard: <b>P1</b>[1-4] • <b>P2</b>[Q-R] • <b>P3</b>[U-P] • <b>P4</b>[Z-V]</span>
+            </div>
+
+            <!-- Live Positions (Vertical Stack Downwards directly under top-right Minimap) -->
+            <div id="liveStandings" class="flex flex-col gap-1 bg-slate-900/85 backdrop-blur-md p-2 rounded-xl border border-slate-700 shadow-lg w-[155px] mt-[108px] pointer-events-auto">
+                <!-- Populated dynamically -->
+            </div>
+        </div>
+    </div>
+
+    <!-- COUNTDOWN OVERLAY -->
+    <div id="countdownOverlay" class="hidden absolute inset-0 z-30 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none">
+        <div id="countdownText" class="font-game text-8xl sm:text-9xl font-extrabold text-amber-400 drop-shadow-[0_8px_8px_rgba(0,0,0,0.8)] animate-pop">
+            3
+        </div>
+    </div>
+
+    <!-- BOTTOM QUIZ CONTROL PANELS (Visible during race) -->
+    <div id="quizHudWrapper" class="hidden relative z-10 w-full px-2 pb-2 sm:px-4 sm:pb-3 mt-auto pointer-events-none flex items-end justify-center gap-3">
+        <!-- Player Quiz Panels Container -->
+        <div id="playersPanelGrid" class="w-full grid gap-2 pointer-events-auto mx-auto">
+            <!-- Dynamically rendered for 1 to 4 human players -->
+        </div>
+    </div>
+
+    <!-- START / SETUP MODAL SCREEN -->
+    <div id="setupScreen" class="absolute inset-0 z-40 flex items-center justify-center p-3 sm:p-6 bg-gradient-to-br from-emerald-950/90 via-slate-900/90 to-emerald-900/90 backdrop-blur-md overflow-y-auto">
+        <div class="w-full max-w-3xl bg-slate-900/95 border-2 border-emerald-500/40 rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.75)] overflow-hidden my-auto animate-pop">
+            
+            <!-- Header Banner -->
+            <div class="bg-gradient-to-r from-blue-600 via-indigo-600 to-emerald-600 p-5 sm:p-6 text-white relative overflow-hidden">
+                <div class="absolute -right-8 -bottom-6 opacity-15 text-9xl rotate-12 pointer-events-none">
+                    <i class="fas fa-flag-checkered"></i>
+                </div>
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+                    <div>
+                        <div class="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-0.5 rounded-full text-xs font-semibold mb-1.5">
+                            <i class="fas fa-map-marked-alt text-amber-300"></i> Edisi Nusantara (38 Provinsi)
+                        </div>
+                        <h1 class="font-game text-3xl sm:text-4xl font-bold tracking-wide drop-shadow">
+                            EDURACE GRAND PRIX
+                        </h1>
+                        <p class="text-blue-100 text-xs sm:text-sm mt-0.5">
+                            Balapan Mobil Pintar di Lintasan Berkelok • 1 hingga 4 Pemain Bersamaan!
+                        </p>
+                    </div>
+                    <!-- Right Header Actions: Fullscreen & Cute SVG CarMascot Preview -->
+                    <div class="flex items-center gap-2.5 self-end sm:self-center">
+                        <button type="button" onclick="toggleFullscreen()" title="Mode Layar Penuh" class="bg-white/15 hover:bg-white/25 text-white px-3.5 py-2.5 rounded-2xl border border-white/30 backdrop-blur-sm flex items-center gap-2 text-xs sm:text-sm font-bold transition shadow-lg active:scale-95">
+                            <i class="fas fa-expand" id="fullscreenMenuIcon"></i>
+                            <span id="fullscreenMenuText">Fullscreen</span>
+                        </button>
+                        <div class="hidden sm:flex items-center justify-center bg-white/10 p-2.5 rounded-2xl border border-white/20 backdrop-blur-sm">
+                            <div id="mascotPreview" class="w-20 h-14 flex items-center justify-center"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Body -->
+            <div class="p-5 sm:p-6 space-y-5 text-slate-100">
+                
+                <!-- 1. Player Count Selection (1P - 4P) & Lap Count -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold uppercase tracking-wider text-blue-400 mb-2">
+                            <i class="fas fa-users mr-1.5"></i>1. Jumlah Pemain (1P - 4P Bersamaan)
+                        </label>
+                        <div class="grid grid-cols-4 gap-2" id="playerCountSelector">
+                            <button type="button" onclick="selectPlayerCount(1)" data-count="1" class="player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-blue-600/30 border-blue-400 text-white shadow-lg">
+                                <span class="text-lg">1P</span>
+                                <span class="bot-sublabel text-[10px] text-blue-200 font-sans font-normal">+3 Mobil AI</span>
+                            </button>
+                            <button type="button" onclick="selectPlayerCount(2)" data-count="2" class="player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750">
+                                <span class="text-lg">2P</span>
+                                <span class="bot-sublabel text-[10px] text-slate-400 font-sans font-normal">+2 Mobil AI</span>
+                            </button>
+                            <button type="button" onclick="selectPlayerCount(3)" data-count="3" class="player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750">
+                                <span class="text-lg">3P</span>
+                                <span class="bot-sublabel text-[10px] text-slate-400 font-sans font-normal">+1 Mobil AI</span>
+                            </button>
+                            <button type="button" onclick="selectPlayerCount(4)" data-count="4" class="player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750">
+                                <span class="text-lg">4P</span>
+                                <span class="text-[10px] text-slate-400 font-sans font-normal">Full Pemain</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 2. Panjang Lintasan (Tanpa Tingkat Kesulitan) -->
+                    <div>
+                        <label class="block text-xs sm:text-sm font-bold uppercase tracking-wider text-amber-400 mb-2">
+                            <i class="fas fa-flag-checkered mr-1.5"></i>2. Panjang Lintasan Balap
+                        </label>
+                        <select id="lapSelect" class="w-full bg-slate-800 border-2 border-slate-700 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-amber-400">
+                            <option value="1">1 Putaran (Cepat - ±1 Menit)</option>
+                            <option value="2" selected>2 Putaran (Standar - ±2 Menit)</option>
+                            <option value="3">3 Putaran (Maraton - ±3 Menit)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 3. Player Names & Bot Toggle Customization -->
+                <div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                        <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">
+                            <i class="fas fa-car-side mr-1.5"></i>3. Daftar Pembalap di Lintasan:
+                        </label>
+                        <!-- Global Bot AI Toggle Button -->
+                        <button type="button" id="globalBotToggleBtn" onclick="toggleAllBots()" class="bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-2 transition active:scale-95">
+                            <i class="fas fa-robot"></i>
+                            <span id="globalBotToggleText">Lawan Bot AI: AKTIF</span>
+                        </button>
+                    </div>
+                    <div id="playerNamesGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+
+                <!-- Error / Status Notification Box -->
+                <div id="statusMessage" class="hidden rounded-2xl p-3.5 text-xs sm:text-sm font-medium flex items-center gap-3 border"></div>
+
+                <!-- Submit & Start Race Button -->
+                <div class="pt-1">
+                    <button id="startRaceBtn" onclick="prepareAndStartRace()" class="w-full bg-gradient-to-r from-emerald-500 via-green-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-game font-extrabold text-lg sm:text-xl py-4 px-6 rounded-2xl shadow-[0_6px_0_#065f46] active:translate-y-1 active:shadow-[0_2px_0_#065f46] transition flex items-center justify-center gap-3">
+                        <i class="fas fa-flag-checkered"></i>
+                        <span>MULAI BALAPAN SEKARANG!</span>
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- FINISH / PODIUM MODAL -->
+    <div id="finishModal" class="hidden absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md overflow-y-auto">
+        <div class="w-full max-w-2xl bg-slate-900 border-2 border-amber-400/60 rounded-3xl shadow-2xl overflow-hidden animate-pop my-auto">
+            <div class="bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500 p-6 text-slate-950 text-center relative">
+                <div class="text-5xl mb-2"><i class="fas fa-trophy drop-shadow"></i></div>
+                <h2 class="font-game text-3xl sm:text-4xl font-extrabold tracking-wide uppercase">HASIL BALAPAN</h2>
+                <p id="finishTopicSubtitle" class="text-slate-900 font-semibold text-xs sm:text-sm mt-1"></p>
+            </div>
+
+            <div class="p-5 sm:p-6 space-y-5">
+                <!-- Standings List -->
+                <div id="podiumList" class="space-y-2.5">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Review Questions Accordion -->
+                <div class="bg-slate-800/80 rounded-2xl p-3.5 border border-slate-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                            <i class="fas fa-check-double mr-1"></i>Daftar Kunci Jawaban (<span id="totalGeneratedCount">0</span> Soal)
+                        </span>
+                    </div>
+                    <div id="questionReviewList" class="max-h-40 overflow-y-auto space-y-2 pr-1 text-xs text-slate-300">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <button onclick="replaySameTopic()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-game font-bold py-3.5 px-5 rounded-2xl shadow-[0_4px_0_#1e3a8a] active:translate-y-1 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-redo"></i> Balap Lagi (Acak Soal)
+                    </button>
+                    <button onclick="openSetupMenu()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-game font-bold py-3.5 px-5 rounded-2xl shadow-[0_4px_0_#065f46] active:translate-y-1 transition flex items-center justify-center gap-2">
+                        <i class="fas fa-users-cog"></i> Pengaturan Pemain & Putaran
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM CONFIRMATION MODAL (No window.confirm used) -->
+    <div id="confirmModal" class="hidden absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+        <div class="bg-slate-900 border-2 border-slate-700 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl animate-pop">
+            <div class="w-14 h-14 rounded-full bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-3 text-2xl">
+                <i class="fas fa-flag-checkered"></i>
+            </div>
+            <h3 class="font-game text-xl font-bold text-white mb-1">Akhiri Balapan Saat Ini?</h3>
+            <p class="text-slate-400 text-xs sm:text-sm mb-5">Progres balapan yang sedang berjalan akan dihentikan dan kembali ke menu pengaturan topik.</p>
+            <div class="flex gap-3">
+                <button onclick="closeConfirmModal()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold py-2.5 rounded-xl border border-slate-600 transition">Batal</button>
+                <button onclick="openSetupMenu()" class="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl shadow-lg transition">Ya, Menu Utama</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /********************************************************************
+         * 1. KONFIGURASI PEMAIN, WARNA MOBIL & PINTASAN KEYBOARD
+         ********************************************************************/
+        const CAR_CONFIGS = [
+            {
+                id: 0,
+                defaultName: "Player 1",
+                aiName: "Bot Biru",
+                colorName: "Biru",
+                primary: "#0066ff",
+                secondary: "#60a5fa",
+                dark: "#003d99",
+                btnBg: "bg-[#0066ff] hover:bg-[#1a75ff]",
+                borderCol: "border-[#0066ff]",
+                badgeBg: "bg-blue-600",
+                laneOffset: -42,
+                keys: ['1', '2', '3', '4'],
+                keyLabels: ['1', '2', '3', '4']
+            },
+            {
+                id: 1,
+                defaultName: "Player 2",
+                aiName: "Bot Kuning",
+                colorName: "Kuning",
+                primary: "#facc15",
+                secondary: "#fef08a",
+                dark: "#ca8a04",
+                btnBg: "bg-[#eab308] hover:bg-[#facc15] text-slate-950",
+                borderCol: "border-[#facc15]",
+                badgeBg: "bg-amber-500",
+                laneOffset: -14,
+                keys: ['q', 'w', 'e', 'r'],
+                keyLabels: ['Q', 'W', 'E', 'R']
+            },
+            {
+                id: 2,
+                defaultName: "Player 3",
+                aiName: "Bot Merah",
+                colorName: "Merah",
+                primary: "#ef4444",
+                secondary: "#fca5a5",
+                dark: "#991b1b",
+                btnBg: "bg-[#ef4444] hover:bg-[#f87171]",
+                borderCol: "border-[#ef4444]",
+                badgeBg: "bg-red-600",
+                laneOffset: 14,
+                keys: ['u', 'i', 'o', 'p'],
+                keyLabels: ['U', 'I', 'O', 'P']
+            },
+            {
+                id: 3,
+                defaultName: "Player 4",
+                aiName: "Bot Oranye",
+                colorName: "Oranye",
+                primary: "#f97316",
+                secondary: "#fdba74",
+                dark: "#c2410c",
+                btnBg: "bg-[#f97316] hover:bg-[#fb923c]",
+                borderCol: "border-[#f97316]",
+                badgeBg: "bg-orange-600",
+                laneOffset: 42,
+                keys: ['z', 'x', 'c', 'v'],
+                keyLabels: ['Z', 'X', 'C', 'V']
+            }
+        ];
+
+        // State Global Game
+        let humanPlayerCount = 1;
+        let customPlayerNames = ["Player 1", "Player 2", "Player 3", "Player 4"];
+        let botSlotEnabled = [true, true, true, true];
+        let currentTopic = "Ibu Kota Provinsi di Indonesia";
+        let totalLaps = 2;
+        let questionPool = [];
+        let gameState = "MENU"; // MENU, COUNTDOWN, RACING, FINISHED
+        let racers = [];
+        let finishOrder = [];
+        let smokeParticles = [];
+        let floatingTexts = [];
+        let soundEnabled = true;
+
+        // State Kamera Dinamis (Zoom mengikuti urutan pertama)
+        let cameraState = {
+            x: 800,
+            y: 500,
+            zoom: 1.0
+        };
+
+        // Web Audio API Synthesizer untuk efek suara tanpa file eksternal
+        let audioCtx = null;
+        function initAudio() {
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) audioCtx = new AudioContextClass();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                if (!audioCtx) return;
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+
+                if (type === 'correct') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.07); // E5
+                    osc.frequency.setValueAtTime(783.99, now + 0.14); // G5
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+                    osc.start(now);
+                    osc.stop(now + 0.32);
+                } else if (type === 'wrong') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(190, now);
+                    osc.frequency.linearRampToValueAtTime(110, now + 0.25);
+                    gain.gain.setValueAtTime(0.16, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+                    osc.start(now);
+                    osc.stop(now + 0.28);
+                } else if (type === 'beep') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(440, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                    osc.start(now);
+                    osc.stop(now + 0.18);
+                } else if (type === 'go') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(880, now);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+                    osc.start(now);
+                    osc.stop(now + 0.45);
+                } else if (type === 'win') {
+                    const notes = [523.25, 659.25, 783.99, 1046.5];
+                    notes.forEach((freq, idx) => {
+                        const o = audioCtx.createOscillator();
+                        const g = audioCtx.createGain();
+                        o.type = 'triangle';
+                        o.connect(g);
+                        g.connect(audioCtx.destination);
+                        o.frequency.setValueAtTime(freq, now + idx * 0.1);
+                        g.gain.setValueAtTime(0.18, now + idx * 0.1);
+                        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.35);
+                        o.start(now + idx * 0.1);
+                        o.stop(now + idx * 0.1 + 0.35);
+                    });
+                }
+            } catch (e) {
+                // Ignore audio error
+            }
+        }
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            const icon = document.getElementById('soundIcon');
+            icon.className = soundEnabled ? 'fas fa-volume-up' : 'fas fa-volume-mute text-red-400';
+        }
+
+        function toggleFullscreen() {
+            const docEl = document.documentElement;
+            const isFs = document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement;
+
+            if (!isFs) {
+                if (docEl.requestFullscreen) {
+                    docEl.requestFullscreen().catch(() => {});
+                } else if (docEl.webkitRequestFullscreen) {
+                    docEl.webkitRequestFullscreen();
+                } else if (docEl.msRequestFullscreen) {
+                    docEl.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen().catch(() => {});
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) {
+                    document.msExitFullscreen();
+                }
+            }
+        }
+
+        function updateFullscreenButtonsUI() {
+            const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+            const hudIcon = document.getElementById('fullscreenHudIcon');
+            const menuIcon = document.getElementById('fullscreenMenuIcon');
+            const menuText = document.getElementById('fullscreenMenuText');
+
+            if (hudIcon) {
+                hudIcon.className = isFs ? 'fas fa-compress text-emerald-400' : 'fas fa-expand';
+            }
+            if (menuIcon) {
+                menuIcon.className = isFs ? 'fas fa-compress text-amber-300' : 'fas fa-expand';
+            }
+            if (menuText) {
+                menuText.textContent = isFs ? 'Keluar Fullscreen' : 'Fullscreen';
+            }
+            setTimeout(resizeCanvas, 100);
+        }
+
+        document.addEventListener('fullscreenchange', updateFullscreenButtonsUI);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenButtonsUI);
+
+        /********************************************************************
+         * 2. GENERATOR AVATAR MOBIL KARTUN (MIRIP REFERENSI GAMBAR)
+         ********************************************************************/
+        function getCuteCarAvatarSVG(primaryColor, secondaryColor, darkColor) {
+            return `
+            <svg viewBox="0 0 120 90" class="w-full h-full drop-shadow-md">
+                <!-- Shadow -->
+                <ellipse cx="62" cy="76" rx="46" ry="10" fill="rgba(0,0,0,0.35)" />
+                <!-- Back Spoiler -->
+                <path d="M 65 14 L 105 14 L 100 24 L 68 24 Z" fill="${primaryColor}" stroke="#111" stroke-width="2.5"/>
+                <rect x="76" y="24" width="6" height="10" fill="#333" stroke="#111" stroke-width="2"/>
+                <rect x="90" y="24" width="6" height="10" fill="#333" stroke="#111" stroke-width="2"/>
+                <!-- Rear Wheel -->
+                <circle cx="94" cy="54" r="15" fill="#1e293b" stroke="#000" stroke-width="3"/>
+                <circle cx="94" cy="54" r="7" fill="#94a3b8" stroke="#000" stroke-width="2"/>
+                <!-- Front Left Wheel (far side) -->
+                <circle cx="22" cy="58" r="14" fill="#0f172a" stroke="#000" stroke-width="3"/>
+                <!-- Car Main Body -->
+                <path d="M 16 56 C 12 40, 28 32, 46 32 L 88 30 C 102 30, 106 44, 102 58 L 90 66 L 24 68 C 16 68, 16 62, 16 56 Z" 
+                      fill="${primaryColor}" stroke="#111" stroke-width="3" stroke-linejoin="round"/>
+                <!-- Highlight stripe -->
+                <path d="M 24 46 Q 55 42 94 42" stroke="${secondaryColor}" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+                <!-- Cute Big Eyes (Windshield) -->
+                <ellipse cx="46" cy="36" rx="11" ry="13" fill="#fff" stroke="#111" stroke-width="2.5"/>
+                <ellipse cx="64" cy="36" rx="11" ry="13" fill="#fff" stroke="#111" stroke-width="2.5"/>
+                <!-- Pupils -->
+                <circle cx="43" cy="37" r="5" fill="#1e3a8a"/>
+                <circle cx="43" cy="37" r="2.5" fill="#000"/>
+                <circle cx="41" cy="34" r="1.8" fill="#fff"/>
+                <circle cx="61" cy="37" r="5" fill="#1e3a8a"/>
+                <circle cx="61" cy="37" r="2.5" fill="#000"/>
+                <circle cx="59" cy="34" r="1.8" fill="#fff"/>
+                <!-- Big Cheerful Grin -->
+                <path d="M 22 54 Q 44 68 64 54 Z" fill="#fff" stroke="#111" stroke-width="2.5"/>
+                <line x1="33" y1="56" x2="33" y2="61" stroke="#cbd5e1" stroke-width="2"/>
+                <line x1="43" y1="57" x2="43" y2="63" stroke="#cbd5e1" stroke-width="2"/>
+                <line x1="53" y1="56" x2="53" y2="61" stroke="#cbd5e1" stroke-width="2"/>
+                <!-- Front Right Wheel (near side) -->
+                <circle cx="75" cy="64" r="16" fill="#1e293b" stroke="#000" stroke-width="3"/>
+                <circle cx="75" cy="64" r="8" fill="#cbd5e1" stroke="#000" stroke-width="2"/>
+            </svg>`;
+        }
+
+        /********************************************************************
+         * 3. LINTASAN BALAP BERKELOK-KELOK (SPLINE GEOMETRY & TREES)
+         ********************************************************************/
+        const WORLD_W = 1600;
+        const WORLD_H = 1000;
+        const TRACK_WIDTH = 135;
+
+        // Titik kontrol lintasan berkelok-kelok (Closed Loop Sirkuit Berliku)
+        const TRACK_CONTROL_POINTS = [
+            { x: 260,  y: 210 }, // Garis Start/Finish lurus atas
+            { x: 640,  y: 210 },
+            { x: 1050, y: 190 },
+            { x: 1340, y: 240 }, // Tikungan kanan atas (seperti gambar)
+            { x: 1410, y: 470 },
+            { x: 1330, y: 760 }, // Tikungan tajam kanan bawah
+            { x: 1090, y: 830 },
+            { x: 960,  y: 620 }, // Chicane / Kelokan tengah ("S" curve)
+            { x: 760,  y: 560 },
+            { x: 630,  y: 790 }, // Kelokan bawah kiri
+            { x: 340,  y: 820 },
+            { x: 170,  y: 640 },
+            { x: 160,  y: 370 }
+        ];
+
+        let trackSamples = [];
+        let totalTrackLength = 0;
+        let trees = [];
+
+        // Interpolasi Catmull-Rom Spline untuk lintasan mulus berkelok-kelok
+        function getCatmullRomPoint(p0, p1, p2, p3, t) {
+            const t2 = t * t;
+            const t3 = t2 * t;
+            const x = 0.5 * (
+                (2 * p1.x) +
+                (-p0.x + p2.x) * t +
+                (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+            );
+            const y = 0.5 * (
+                (2 * p1.y) +
+                (-p0.y + p2.y) * t +
+                (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+            );
+            return { x, y };
+        }
+
+        function buildTrackGeometry() {
+            trackSamples = [];
+            const n = TRACK_CONTROL_POINTS.length;
+            const stepsPerSegment = 45;
+
+            for (let i = 0; i < n; i++) {
+                const p0 = TRACK_CONTROL_POINTS[(i - 1 + n) % n];
+                const p1 = TRACK_CONTROL_POINTS[i];
+                const p2 = TRACK_CONTROL_POINTS[(i + 1) % n];
+                const p3 = TRACK_CONTROL_POINTS[(i + 2) % n];
+
+                for (let s = 0; s < stepsPerSegment; s++) {
+                    const t = s / stepsPerSegment;
+                    trackSamples.push(getCatmullRomPoint(p0, p1, p2, p3, t));
+                }
+            }
+
+            // Hitung jarak kumulatif, vektor arah (tangent) & normal untuk jalur mobil (4 lajur)
+            totalTrackLength = 0;
+            for (let i = 0; i < trackSamples.length; i++) {
+                const curr = trackSamples[i];
+                const next = trackSamples[(i + 1) % trackSamples.length];
+                const dx = next.x - curr.x;
+                const dy = next.y - curr.y;
+                const segLen = Math.hypot(dx, dy);
+
+                curr.dist = totalTrackLength;
+                curr.angle = Math.atan2(dy, dx);
+                // Normal tegak lurus lintasan
+                curr.nx = -dy / (segLen || 1);
+                curr.ny = dx / (segLen || 1);
+
+                totalTrackLength += segLen;
+            }
+
+            generateTreesAroundTrack();
+        }
+
+        // Ambil koordinat & sudut mobil berdasarkan jarak tempuh dan offset lajur (-42 s/d +42)
+        function getPointOnTrack(distance, laneOffset = 0) {
+            let d = ((distance % totalTrackLength) + totalTrackLength) % totalTrackLength;
+            // Binary search sampel terdekat
+            let low = 0, high = trackSamples.length - 1;
+            while (low < high) {
+                const mid = (low + high) >> 1;
+                if (trackSamples[mid].dist < d) low = mid + 1;
+                else high = mid;
+            }
+            const idx = Math.max(0, low - 1);
+            const s1 = trackSamples[idx];
+            const s2 = trackSamples[(idx + 1) % trackSamples.length];
+            const segDist = (s2.dist > s1.dist) ? (s2.dist - s1.dist) : (totalTrackLength - s1.dist);
+            const ratio = segDist > 0.0001 ? Math.min(1, Math.max(0, (d - s1.dist) / segDist)) : 0;
+
+            const cx = s1.x + (s2.x - s1.x) * ratio;
+            const cy = s1.y + (s2.y - s1.y) * ratio;
+            const nx = s1.nx + (s2.nx - s1.nx) * ratio;
+            const ny = s1.ny + (s2.ny - s1.ny) * ratio;
+
+            // Interpolasi sudut dengan mulus
+            let da = s2.angle - s1.angle;
+            while (da > Math.PI) da -= Math.PI * 2;
+            while (da < -Math.PI) da += Math.PI * 2;
+            const angle = s1.angle + da * ratio;
+
+            return {
+                x: cx + nx * laneOffset,
+                y: cy + ny * laneOffset,
+                angle: angle
+            };
+        }
+
+        function generateTreesAroundTrack() {
+            trees = [];
+            const candidates = [
+                // Area atas & luar
+                { x: -120, y: -80 }, { x: 250, y: -90 }, { x: 650, y: -100 }, { x: 1050, y: -90 }, { x: 1480, y: -70 },
+                { x: 180, y: 70 }, { x: 350, y: 65 }, { x: 580, y: 75 }, { x: 760, y: 65 },
+                { x: 980, y: 60 }, { x: 1200, y: 70 }, { x: 1450, y: 110 },
+                // Area pulau tengah lintasan
+                { x: 460, y: 390 }, { x: 650, y: 380 }, { x: 880, y: 370 }, { x: 1120, y: 410 },
+                { x: 410, y: 560 }, { x: 1160, y: 610 },
+                // Area pinggir kiri, kanan & bawah luar (untuk tampilan saat zoom-in)
+                { x: -110, y: 220 }, { x: -130, y: 550 }, { x: -90, y: 880 },
+                { x: 65, y: 240 }, { x: 55, y: 500 }, { x: 75, y: 790 },
+                { x: 240, y: 940 }, { x: 510, y: 935 }, { x: 820, y: 920 }, { x: 1260, y: 930 },
+                { x: 1520, y: 360 }, { x: 1520, y: 630 },
+                { x: 1720, y: 180 }, { x: 1740, y: 520 }, { x: 1700, y: 850 },
+                { x: 350, y: 1120 }, { x: 780, y: 1140 }, { x: 1200, y: 1120 }
+            ];
+
+            candidates.forEach((pt, i) => {
+                // Pastikan pohon tidak menabrak aspal jalan
+                let minDist = Infinity;
+                for (let j = 0; j < trackSamples.length; j += 5) {
+                    const dist = Math.hypot(pt.x - trackSamples[j].x, pt.y - trackSamples[j].y);
+                    if (dist < minDist) minDist = dist;
+                }
+                if (minDist > TRACK_WIDTH * 0.78) {
+                    trees.push({
+                        x: pt.x,
+                        y: pt.y,
+                        scale: 0.85 + (i % 4) * 0.12
+                    });
+                }
+            });
+        }
+
+        /********************************************************************
+         * 4. BANK SOAL SIAP PAKAI (38 IBU KOTA PROVINSI DI INDONESIA)
+         ********************************************************************/
+        const PROVINCES_DATA = [
+            { p: "Aceh", c: "Banda Aceh" },
+            { p: "Sumatera Utara", c: "Medan" },
+            { p: "Sumatera Barat", c: "Padang" },
+            { p: "Riau", c: "Pekanbaru" },
+            { p: "Kepulauan Riau", c: "Tanjungpinang" },
+            { p: "Jambi", c: "Jambi" },
+            { p: "Sumatera Selatan", c: "Palembang" },
+            { p: "Bengkulu", c: "Bengkulu" },
+            { p: "Lampung", c: "Bandar Lampung" },
+            { p: "Kep. Bangka Belitung", c: "Pangkalpinang" },
+            { p: "Banten", c: "Serang" },
+            { p: "DKI Jakarta", c: "Jakarta" },
+            { p: "Jawa Barat", c: "Bandung" },
+            { p: "Jawa Tengah", c: "Semarang" },
+            { p: "DI Yogyakarta", c: "Yogyakarta" },
+            { p: "Jawa Timur", c: "Surabaya" },
+            { p: "Bali", c: "Denpasar" },
+            { p: "Nusa Tenggara Barat", c: "Mataram" },
+            { p: "Nusa Tenggara Timur", c: "Kupang" },
+            { p: "Kalimantan Barat", c: "Pontianak" },
+            { p: "Kalimantan Tengah", c: "Palangka Raya" },
+            { p: "Kalimantan Selatan", c: "Banjarbaru" },
+            { p: "Kalimantan Timur", c: "Samarinda" },
+            { p: "Kalimantan Utara", c: "Tanjung Selor" },
+            { p: "Sulawesi Utara", c: "Manado" },
+            { p: "Gorontalo", c: "Gorontalo" },
+            { p: "Sulawesi Tengah", c: "Palu" },
+            { p: "Sulawesi Barat", c: "Mamuju" },
+            { p: "Sulawesi Selatan", c: "Makassar" },
+            { p: "Sulawesi Tenggara", c: "Kendari" },
+            { p: "Maluku", c: "Ambon" },
+            { p: "Maluku Utara", c: "Sofifi" },
+            { p: "Papua", c: "Jayapura" },
+            { p: "Papua Barat", c: "Manokwari" },
+            { p: "Papua Barat Daya", c: "Sorong" },
+            { p: "Papua Tengah", c: "Nabire" },
+            { p: "Papua Pegunungan", c: "Jayawijaya" },
+            { p: "Papua Selatan", c: "Merauke" }
+        ];
+
+        function generateReadyQuestions() {
+            const shuffled = [...PROVINCES_DATA].sort(() => Math.random() - 0.5);
+            return shuffled.map((item, idx) => {
+                // Variasikan bentuk pertanyaan: menanyakan Ibu Kota dari Provinsi atau Provinsi dari Ibu Kota
+                const askProvince = idx % 3 === 2;
+                if (askProvince) {
+                    const wrongProvinces = PROVINCES_DATA
+                        .filter(x => x.p !== item.p)
+                        .sort(() => Math.random() - 0.5)
+                        .slice(0, 3)
+                        .map(x => x.p);
+                    const options = [item.p, ...wrongProvinces].sort(() => Math.random() - 0.5);
+                    return {
+                        question: `${item.c} adalah ibu kota dari Provinsi...`,
+                        options: options,
+                        correctIndex: options.indexOf(item.p)
+                    };
+                } else {
+                    const wrongCities = PROVINCES_DATA
+                        .filter(x => x.c !== item.c)
+                        .sort(() => Math.random() - 0.5)
+                        .slice(0, 3)
+                        .map(x => x.c);
+                    const options = [item.c, ...wrongCities].sort(() => Math.random() - 0.5);
+                    return {
+                        question: `Ibu kota Provinsi ${item.p} adalah...`,
+                        options: options,
+                        correctIndex: options.indexOf(item.c)
+                    };
+                }
+            });
+        }
+
+        /********************************************************************
+         * 5. LOGIKA UI HALAMAN AWAL (SETUP PEMAIN & PENGATURAN BOT)
+         ********************************************************************/
+        function selectPlayerCount(count) {
+            humanPlayerCount = count;
+            updateBotLabelsAndHeader();
+            renderPlayerNameInputs();
+        }
+
+        function toggleSingleBot(idx) {
+            botSlotEnabled[idx] = !botSlotEnabled[idx];
+            updateBotLabelsAndHeader();
+            renderPlayerNameInputs();
+        }
+
+        function toggleAllBots() {
+            // Cek apakah ada slot bot yang sedang aktif
+            let anyActive = false;
+            for (let i = humanPlayerCount; i < 4; i++) {
+                if (botSlotEnabled[i]) anyActive = true;
+            }
+            const nextState = !anyActive;
+            for (let i = 0; i < 4; i++) {
+                botSlotEnabled[i] = nextState;
+            }
+            updateBotLabelsAndHeader();
+            renderPlayerNameInputs();
+        }
+
+        function updateBotLabelsAndHeader() {
+            const globalBtn = document.getElementById('globalBotToggleBtn');
+            const globalText = document.getElementById('globalBotToggleText');
+
+            if (humanPlayerCount === 4) {
+                if (globalBtn) globalBtn.classList.add('hidden');
+            } else {
+                if (globalBtn) globalBtn.classList.remove('hidden');
+                let activeBots = 0;
+                for (let i = humanPlayerCount; i < 4; i++) {
+                    if (botSlotEnabled[i]) activeBots++;
+                }
+                if (globalBtn && globalText) {
+                    if (activeBots > 0) {
+                        globalBtn.className = "bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/50 text-emerald-300 px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-2 transition active:scale-95";
+                        globalText.textContent = `Lawan Bot AI: AKTIF (${activeBots} Bot)`;
+                    } else {
+                        globalBtn.className = "bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-400 px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-2 transition active:scale-95";
+                        globalText.textContent = "Lawan Bot AI: NONAKTIF";
+                    }
+                }
+            }
+
+            document.querySelectorAll('.player-count-btn').forEach(btn => {
+                const btnCount = parseInt(btn.getAttribute('data-count'));
+                const subLabel = btn.querySelector('.bot-sublabel');
+                if (subLabel) {
+                    let botsForCount = 0;
+                    for (let i = btnCount; i < 4; i++) {
+                        if (botSlotEnabled[i]) botsForCount++;
+                    }
+                    subLabel.textContent = botsForCount > 0 ? `+${botsForCount} Mobil AI` : `Tanpa Bot AI`;
+                }
+
+                if (btnCount === humanPlayerCount) {
+                    btn.className = "player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-blue-600/35 border-blue-400 text-white shadow-lg scale-[1.02]";
+                } else {
+                    btn.className = "player-count-btn py-2.5 px-2 rounded-2xl border-2 font-game font-bold text-center transition flex flex-col items-center justify-center bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-750";
+                }
+            });
+        }
+
+        function renderPlayerNameInputs() {
+            const container = document.getElementById('playerNamesGrid');
+            container.innerHTML = '';
+
+            CAR_CONFIGS.forEach((cfg, idx) => {
+                const isHuman = idx < humanPlayerCount;
+                const isBotActive = botSlotEnabled[idx];
+                const card = document.createElement('div');
+                card.className = `p-2.5 rounded-2xl border-2 flex items-center gap-2.5 transition ${
+                    isHuman
+                        ? 'bg-slate-800/90 ' + cfg.borderCol
+                        : isBotActive
+                            ? 'bg-slate-800/60 border-slate-600'
+                            : 'bg-slate-900/40 border-slate-800/80 opacity-50'
+                }`;
+
+                const avatarHtml = `<div class="w-11 h-9 shrink-0">${getCuteCarAvatarSVG(cfg.primary, cfg.secondary, cfg.dark)}</div>`;
+
+                if (isHuman) {
+                    card.innerHTML = `
+                        ${avatarHtml}
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Pemain ${idx + 1}</span>
+                                <span class="text-[9px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300">${cfg.keyLabels.join('')}</span>
+                            </div>
+                            <input type="text" maxlength="12" value="${customPlayerNames[idx]}" 
+                                oninput="customPlayerNames[${idx}] = this.value || 'Player ${idx + 1}'"
+                                class="w-full bg-transparent border-b border-slate-600 focus:border-white text-xs sm:text-sm font-bold text-white focus:outline-none truncate"
+                            />
+                        </div>
+                    `;
+                } else {
+                    card.innerHTML = `
+                        ${avatarHtml}
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="text-[10px] font-bold uppercase tracking-wider ${isBotActive ? 'text-amber-400' : 'text-slate-500'}">
+                                    <i class="fas fa-robot mr-1"></i>Bot AI
+                                </span>
+                                <button type="button" onclick="toggleSingleBot(${idx})" class="text-[9px] font-bold px-2 py-0.5 rounded-md transition ${
+                                    isBotActive
+                                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                                        : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700'
+                                }">
+                                    ${isBotActive ? 'AKTIF' : 'OFF'}
+                                </button>
+                            </div>
+                            <div class="text-xs sm:text-sm font-bold ${isBotActive ? 'text-slate-200' : 'text-slate-500 line-through'} truncate mt-0.5">
+                                ${isBotActive ? cfg.aiName : 'Tidak Ikut'}
+                            </div>
+                        </div>
+                    `;
+                }
+                container.appendChild(card);
+            });
+        }
+
+        function prepareAndStartRace() {
+            initAudio();
+            currentTopic = "Ibu Kota Provinsi di Indonesia";
+            totalLaps = parseInt(document.getElementById('lapSelect').value) || 2;
+            questionPool = generateReadyQuestions();
+            startNewRaceSession();
+        }
+
+        /********************************************************************
+         * 6. MANAJEMEN SESI BALAPAN & PANEL PILIHAN GANDA (1P - 4P)
+         ********************************************************************/
+        function startNewRaceSession() {
+            document.getElementById('setupScreen').classList.add('hidden');
+            document.getElementById('finishModal').classList.add('hidden');
+            document.getElementById('confirmModal').classList.add('hidden');
+            document.getElementById('topHud').classList.remove('hidden');
+            document.getElementById('quizHudWrapper').classList.remove('hidden');
+
+            finishOrder = [];
+            smokeParticles = [];
+            floatingTexts = [];
+
+            const targetFinishDistance = totalTrackLength * totalLaps;
+
+            // Inisialisasi Mobil Pembalap (Pemain + Bot AI yang diaktifkan saja)
+            racers = [];
+            CAR_CONFIGS.forEach((cfg, idx) => {
+                const isHuman = idx < humanPlayerCount;
+                if (!isHuman && !botSlotEnabled[idx]) return; // Lewati bot jika dinonaktifkan
+
+                // Acak urutan soal per pemain agar tidak saling menyontek tombol di layar yang sama
+                const shuffledIndices = Array.from({ length: questionPool.length }, (_, i) => i)
+                    .sort(() => Math.random() - 0.5);
+
+                racers.push({
+                    id: idx,
+                    name: isHuman ? (customPlayerNames[idx] || cfg.defaultName) : cfg.aiName,
+                    isHuman: isHuman,
+                    config: cfg,
+                    distance: 0, // Mulai di garis start (0)
+                    targetDistance: targetFinishDistance,
+                    speed: 0, // Kecepatan saat ini
+                    baseCruiseSpeed: 18, // Laju dasar pelan agar terlihat berjalan
+                    boostVelocity: 0, // Lonjakan kecepatan saat menjawab benar
+                    laneOffset: cfg.laneOffset,
+                    questionNumber: 1,
+                    questionOrder: shuffledIndices,
+                    qPointer: 0,
+                    correctCount: 0,
+                    wrongCount: 0,
+                    lockedUntil: 0, // Penalti waktu jika salah jawab
+                    finished: false,
+                    finishTime: null,
+                    aiNextAnswerTimer: 1.8 + Math.random() * 1.8
+                });
+            });
+
+            // Set posisi awal kamera langsung ke garis start agar transisi zoom mulus
+            const startPos = getPointOnTrack(0, 0);
+            cameraState.x = startPos.x;
+            cameraState.y = startPos.y;
+
+            renderQuizPanels();
+            updateLiveStandingsHUD();
+            runCountdown();
+        }
+
+        function getRacerCurrentQuestion(racer) {
+            const qIdx = racer.questionOrder[racer.qPointer % racer.questionOrder.length];
+            return questionPool[qIdx];
+        }
+
+        function renderQuizPanels() {
+            const grid = document.getElementById('playersPanelGrid');
+            grid.innerHTML = '';
+
+            // Atur tata letak grid responsif sesuai jumlah pemain manusia (1P s/d 4P)
+            if (humanPlayerCount === 1) {
+                grid.className = "w-full max-w-2xl grid grid-cols-1 gap-2 pointer-events-auto mx-auto";
+            } else if (humanPlayerCount === 2) {
+                grid.className = "w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-2.5 pointer-events-auto mx-auto";
+            } else if (humanPlayerCount === 3) {
+                grid.className = "w-full grid grid-cols-1 md:grid-cols-3 gap-2 pointer-events-auto";
+            } else {
+                grid.className = "w-full grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 pointer-events-auto";
+            }
+
+            for (let i = 0; i < humanPlayerCount; i++) {
+                const racer = racers[i];
+                const cfg = racer.config;
+                const compact = humanPlayerCount >= 3;
+
+                const panel = document.createElement('div');
+                panel.id = `quizPanel_${i}`;
+                panel.className = `bg-slate-200/85 backdrop-blur-md rounded-2xl border-2 ${cfg.borderCol} shadow-2xl p-2 sm:p-2.5 flex items-center gap-2.5 relative overflow-hidden transition`;
+
+                panel.innerHTML = `
+                    <!-- Left Avatar & Player Name (Mirip gambar referensi) -->
+                    <div class="${compact ? 'w-16 sm:w-20' : 'w-20 sm:w-28'} shrink-0 flex flex-col items-center justify-center text-center">
+                        <div class="${compact ? 'w-14 h-11' : 'w-20 h-16'}">
+                            ${getCuteCarAvatarSVG(cfg.primary, cfg.secondary, cfg.dark)}
+                        </div>
+                        <span class="text-slate-900 font-extrabold text-[11px] sm:text-xs truncate w-full leading-tight mt-0.5">${racer.name}</span>
+                        <span id="pLapBadge_${i}" class="text-[10px] font-bold text-slate-600">Lap 1/${totalLaps}</span>
+                    </div>
+
+                    <!-- Right Question Screen & 4 Multiple Choice Buttons -->
+                    <div class="flex-1 min-w-0 flex flex-col gap-1.5">
+                        <!-- Black Question Display Board -->
+                        <div class="question-board rounded-xl border-2 ${cfg.borderCol} px-3 py-1.5 sm:py-2 flex items-center gap-2.5 min-h-[48px] sm:min-h-[56px]">
+                            <div class="text-center shrink-0 border-r border-slate-700 pr-2.5">
+                                <div class="text-[8px] sm:text-[9px] font-bold tracking-wider text-slate-400 uppercase">QUESTION</div>
+                                <div id="qNum_${i}" class="font-game text-lg sm:text-2xl font-extrabold text-slate-400 leading-none">1</div>
+                            </div>
+                            <div id="qText_${i}" class="flex-1 text-center text-white font-bold ${compact ? 'text-xs sm:text-sm' : 'text-sm sm:text-lg'} leading-snug line-clamp-2">
+                                Memuat soal...
+                            </div>
+                        </div>
+
+                        <!-- 4 Answer Buttons Row -->
+                        <div id="qOptions_${i}" class="grid grid-cols-4 gap-1.5">
+                            <!-- Buttons injected via updatePlayerQuestionUI -->
+                        </div>
+                    </div>
+
+                    <!-- Feedback Overlay for Wrong/Cooldown -->
+                    <div id="pLockOverlay_${i}" class="hidden absolute inset-0 bg-red-950/80 backdrop-blur-[2px] flex items-center justify-center text-white font-game font-bold text-sm sm:text-base gap-2">
+                        <i class="fas fa-times-circle text-red-400 text-xl"></i>
+                        <span>Kurang Tepat! Siap-siap soal berikutnya...</span>
+                    </div>
+                `;
+
+                grid.appendChild(panel);
+                updatePlayerQuestionUI(i);
+            }
+        }
+
+        function updatePlayerQuestionUI(playerIdx) {
+            const racer = racers[playerIdx];
+            if (!racer || !racer.isHuman) return;
+
+            const qObj = getRacerCurrentQuestion(racer);
+            const numEl = document.getElementById(`qNum_${playerIdx}`);
+            const textEl = document.getElementById(`qText_${playerIdx}`);
+            const optsContainer = document.getElementById(`qOptions_${playerIdx}`);
+
+            if (!numEl || !textEl || !optsContainer) return;
+
+            if (racer.finished) {
+                textEl.innerHTML = `<span class="text-emerald-400"><i class="fas fa-flag-checkered mr-1"></i>FINIS! Posisi #${finishOrder.indexOf(racer) + 1}</span>`;
+                optsContainer.innerHTML = '';
+                return;
+            }
+
+            numEl.textContent = racer.questionNumber;
+            textEl.textContent = qObj.question;
+
+            const cfg = racer.config;
+            const compact = humanPlayerCount >= 3;
+
+            optsContainer.innerHTML = qObj.options.map((optText, optIdx) => {
+                const keyHint = cfg.keyLabels[optIdx];
+                return `
+                    <button type="button"
+                        onclick="handlePlayerAnswer(${playerIdx}, ${optIdx})"
+                        class="btn-answer ${cfg.btnBg} text-white rounded-xl py-1.5 sm:py-2 px-1.5 relative flex flex-col items-center justify-center min-h-[40px] sm:min-h-[48px] select-none overflow-hidden">
+                        <span class="absolute top-0.5 left-1.5 text-[9px] sm:text-[10px] font-bold opacity-80">${optIdx + 1}.</span>
+                        <span class="hidden xl:inline-block absolute top-0.5 right-1.5 text-[8px] font-mono bg-black/25 px-1 rounded opacity-75">${keyHint}</span>
+                        <span class="font-bold ${compact ? 'text-[11px] sm:text-xs' : 'text-xs sm:text-base'} leading-tight text-center break-words w-full mt-2">${optText}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        function handlePlayerAnswer(playerIdx, selectedOptionIdx) {
+            if (gameState !== "RACING") return;
+            const racer = racers[playerIdx];
+            if (!racer || !racer.isHuman || racer.finished) return;
+
+            const now = performance.now();
+            if (now < racer.lockedUntil) return;
+
+            const qObj = getRacerCurrentQuestion(racer);
+            const carPos = getPointOnTrack(racer.distance, racer.laneOffset);
+
+            if (selectedOptionIdx === qObj.correctIndex) {
+                // Jawaban BENAR -> Mobil ngebut + kepulan asap knalpot
+                playSound('correct');
+                racer.correctCount++;
+                racer.questionNumber++;
+                racer.qPointer++;
+                racer.boostVelocity = Math.min(racer.boostVelocity + 155, 240);
+
+                // Spawn partikel asap knalpot putih seperti di gambar referensi
+                for (let k = 0; k < 7; k++) {
+                    smokeParticles.push({
+                        x: carPos.x - Math.cos(carPos.angle) * 26 + (Math.random() - 0.5) * 10,
+                        y: carPos.y - Math.sin(carPos.angle) * 26 + (Math.random() - 0.5) * 10,
+                        vx: -Math.cos(carPos.angle) * (25 + Math.random() * 35),
+                        vy: -Math.sin(carPos.angle) * (25 + Math.random() * 35),
+                        r: 7 + Math.random() * 7,
+                        alpha: 0.95
+                    });
+                }
+
+                // Teks melayang di atas mobil
+                floatingTexts.push({
+                    x: carPos.x,
+                    y: carPos.y - 25,
+                    text: "⚡ NGEBUT!",
+                    color: "#4ade80",
+                    alpha: 1.0
+                });
+
+                updatePlayerQuestionUI(playerIdx);
+            } else {
+                // Jawaban SALAH -> Penalti singkat 0.9 detik & ganti soal
+                playSound('wrong');
+                racer.wrongCount++;
+                racer.boostVelocity *= 0.25;
+                racer.lockedUntil = now + 900;
+
+                floatingTexts.push({
+                    x: carPos.x,
+                    y: carPos.y - 25,
+                    text: "✖ SALAH!",
+                    color: "#f87171",
+                    alpha: 1.0
+                });
+
+                const panel = document.getElementById(`quizPanel_${playerIdx}`);
+                const lockOverlay = document.getElementById(`pLockOverlay_${playerIdx}`);
+                if (panel) {
+                    panel.classList.add('animate-shake');
+                    setTimeout(() => panel.classList.remove('animate-shake'), 400);
+                }
+                if (lockOverlay) {
+                    lockOverlay.classList.remove('hidden');
+                    setTimeout(() => {
+                        lockOverlay.classList.add('hidden');
+                        racer.questionNumber++;
+                        racer.qPointer++;
+                        updatePlayerQuestionUI(playerIdx);
+                    }, 900);
+                }
+            }
+        }
+
+        // Dukungan Keyboard 1P s/d 4P Bersamaan
+        window.addEventListener('keydown', (e) => {
+            if (gameState !== "RACING") return;
+            const key = e.key.toLowerCase();
+            for (let i = 0; i < humanPlayerCount; i++) {
+                const keyIdx = CAR_CONFIGS[i].keys.indexOf(key);
+                if (keyIdx !== -1) {
+                    e.preventDefault();
+                    handlePlayerAnswer(i, keyIdx);
+                    break;
+                }
+            }
+        });
+
+        /********************************************************************
+         * 7. COUNTDOWN, FISIKA BALAPAN & KECERDASAN LAWAN AI
+         ********************************************************************/
+        function runCountdown() {
+            gameState = "COUNTDOWN";
+            const overlay = document.getElementById('countdownOverlay');
+            const text = document.getElementById('countdownText');
+            overlay.classList.remove('hidden');
+
+            let count = 3;
+            text.textContent = count;
+            playSound('beep');
+
+            const timer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    text.textContent = count;
+                    playSound('beep');
+                } else if (count === 0) {
+                    text.textContent = "GO!";
+                    text.className = "font-game text-8xl sm:text-9xl font-extrabold text-emerald-400 drop-shadow-[0_8px_8px_rgba(0,0,0,0.8)] animate-pop";
+                    playSound('go');
+                    gameState = "RACING";
+                } else {
+                    clearInterval(timer);
+                    overlay.classList.add('hidden');
+                    text.className = "font-game text-8xl sm:text-9xl font-extrabold text-amber-400 drop-shadow-[0_8px_8px_rgba(0,0,0,0.8)] animate-pop";
+                }
+            }, 850);
+        }
+
+        function updateRacePhysics(dt) {
+            if (gameState !== "RACING") return;
+
+            racers.forEach((racer) => {
+                if (racer.finished) return;
+
+                // Logika Bot AI menjawab soal secara berkala
+                if (!racer.isHuman) {
+                    racer.aiNextAnswerTimer -= dt;
+                    if (racer.aiNextAnswerTimer <= 0) {
+                        // Tingkat akurasi AI sekitar 78%
+                        const isCorrect = Math.random() < 0.78;
+                        const carPos = getPointOnTrack(racer.distance, racer.laneOffset);
+                        if (isCorrect) {
+                            racer.correctCount++;
+                            racer.boostVelocity = Math.min(racer.boostVelocity + 135, 210);
+                            for (let k = 0; k < 5; k++) {
+                                smokeParticles.push({
+                                    x: carPos.x - Math.cos(carPos.angle) * 24,
+                                    y: carPos.y - Math.sin(carPos.angle) * 24,
+                                    vx: -Math.cos(carPos.angle) * (20 + Math.random() * 25),
+                                    vy: -Math.sin(carPos.angle) * (20 + Math.random() * 25),
+                                    r: 6 + Math.random() * 6,
+                                    alpha: 0.85
+                                });
+                            }
+                        } else {
+                            racer.wrongCount++;
+                            racer.boostVelocity *= 0.4;
+                        }
+                        racer.aiNextAnswerTimer = 2.1 + Math.random() * 2.0;
+                    }
+                }
+
+                // Peluruhan boost secara halus (gesekan udara/lintasan)
+                racer.boostVelocity *= Math.pow(0.32, dt);
+                if (racer.boostVelocity < 1) racer.boostVelocity = 0;
+
+                racer.speed = racer.baseCruiseSpeed + racer.boostVelocity;
+                racer.distance += racer.speed * dt;
+
+                // Update indikator Lap pemain
+                if (racer.isHuman) {
+                    const currentLap = Math.min(totalLaps, Math.floor(racer.distance / totalTrackLength) + 1);
+                    const badge = document.getElementById(`pLapBadge_${racer.id}`);
+                    if (badge) badge.textContent = `Lap ${currentLap}/${totalLaps}`;
+                }
+
+                // Cek apakah sudah menyentuh garis Finish
+                if (racer.distance >= racer.targetDistance) {
+                    racer.distance = racer.targetDistance;
+                    racer.finished = true;
+                    racer.finishTime = performance.now();
+                    finishOrder.push(racer);
+                    playSound('win');
+
+                    if (racer.isHuman) {
+                        updatePlayerQuestionUI(racer.id);
+                    }
+
+                    // Cek apabila semua pemain manusia sudah selesai (atau semua pembalap selesai)
+                    const allHumansFinished = racers.filter(r => r.isHuman).every(r => r.finished);
+                    if (allHumansFinished || finishOrder.length === racers.length) {
+                        completeRaceAndShowPodium();
+                    }
+                }
+            });
+
+            // Update partikel asap knalpot
+            for (let i = smokeParticles.length - 1; i >= 0; i--) {
+                const p = smokeParticles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.r += 14 * dt;
+                p.alpha -= 1.1 * dt;
+                if (p.alpha <= 0) smokeParticles.splice(i, 1);
+            }
+
+            // Update teks melayang
+            for (let i = floatingTexts.length - 1; i >= 0; i--) {
+                const ft = floatingTexts[i];
+                ft.y -= 35 * dt;
+                ft.alpha -= 0.95 * dt;
+                if (ft.alpha <= 0) floatingTexts.splice(i, 1);
+            }
+
+            updateLiveStandingsHUD();
+        }
+
+        function updateLiveStandingsHUD() {
+            const container = document.getElementById('liveStandings');
+            if (!container || racers.length === 0) return;
+
+            const sorted = [...racers].sort((a, b) => b.distance - a.distance);
+            container.innerHTML = sorted.map((r, rank) => {
+                const pct = Math.min(100, Math.round((r.distance / r.targetDistance) * 100));
+                return `
+                    <div class="flex items-center justify-between gap-2 bg-slate-800/90 px-2.5 py-1 rounded-lg border ${r.config.borderCol}">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-[10px] font-extrabold text-amber-400 w-4">#${rank + 1}</span>
+                            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${r.config.primary}"></span>
+                            <span class="text-[11px] font-bold text-white truncate max-w-[90px]">${r.name}</span>
+                        </div>
+                        <span class="text-[10px] text-slate-300 font-mono font-semibold shrink-0">${pct}%</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function completeRaceAndShowPodium() {
+            if (gameState === "FINISHED") return;
+            gameState = "FINISHED";
+
+            // Urutkan pembalap yang belum sempat finis berdasarkan jarak terakhir
+            const remaining = racers.filter(r => !finishOrder.includes(r)).sort((a, b) => b.distance - a.distance);
+            const finalStandings = [...finishOrder, ...remaining];
+
+            document.getElementById('finishTopicSubtitle').textContent = `Topik: ${currentTopic}`;
+            document.getElementById('totalGeneratedCount').textContent = questionPool.length;
+
+            const podiumList = document.getElementById('podiumList');
+            const medals = ['🥇 Juara 1', '🥈 Juara 2', '🥉 Juara 3', '🏁 Posisi 4'];
+
+            podiumList.innerHTML = finalStandings.map((r, idx) => `
+                <div class="flex items-center justify-between p-3 rounded-2xl border-2 ${idx === 0 ? 'bg-amber-500/20 border-amber-400' : 'bg-slate-800/90 border-slate-700'}">
+                    <div class="flex items-center gap-3">
+                        <span class="font-game font-bold text-sm sm:text-base ${idx === 0 ? 'text-amber-300' : 'text-slate-300'} w-24">${medals[idx]}</span>
+                        <div class="w-12 h-9">${getCuteCarAvatarSVG(r.config.primary, r.config.secondary, r.config.dark)}</div>
+                        <div>
+                            <div class="font-bold text-white text-sm sm:text-base flex items-center gap-1.5">
+                                ${r.name}
+                                ${r.isHuman ? '<span class="text-[10px] bg-emerald-500/30 text-emerald-300 px-2 py-0.5 rounded-full">Pemain</span>' : '<span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">Bot AI</span>'}
+                            </div>
+                            <div class="text-xs text-slate-400">Benar: <b class="text-emerald-400">${r.correctCount}</b> • Salah: <b class="text-red-400">${r.wrongCount}</b></div>
+                        </div>
+                    </div>
+                    <div class="text-right font-game font-bold text-lg text-amber-400">
+                        ${r.correctCount * 100} <span class="text-xs text-slate-400">pts</span>
+                    </div>
+                </div>
+            `).join('');
+
+            // Render daftar pembahasan soal AI
+            const reviewContainer = document.getElementById('questionReviewList');
+            reviewContainer.innerHTML = questionPool.map((q, i) => `
+                <div class="p-2 rounded-xl bg-slate-900/80 border border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                    <span class="font-medium text-slate-200"><b>${i + 1}.</b> ${q.question}</span>
+                    <span class="text-emerald-400 font-bold shrink-0"><i class="fas fa-check mr-1"></i>${q.options[q.correctIndex]}</span>
+                </div>
+            `).join('');
+
+            setTimeout(() => {
+                document.getElementById('finishModal').classList.remove('hidden');
+            }, 600);
+        }
+
+        function replaySameTopic() {
+            questionPool = generateReadyQuestions();
+            startNewRaceSession();
+        }
+
+        function confirmBackToMenu() {
+            document.getElementById('confirmModal').classList.remove('hidden');
+        }
+
+        function closeConfirmModal() {
+            document.getElementById('confirmModal').classList.add('hidden');
+        }
+
+        function openSetupMenu() {
+            gameState = "MENU";
+            document.getElementById('confirmModal').classList.add('hidden');
+            document.getElementById('finishModal').classList.add('hidden');
+            document.getElementById('topHud').classList.add('hidden');
+            document.getElementById('quizHudWrapper').classList.add('hidden');
+            document.getElementById('setupScreen').classList.remove('hidden');
+        }
+
+        /********************************************************************
+         * 8. RENDERING CANVAS (LINTASAN, POHON, MOBIL TOP-DOWN & MINIMAP)
+         ********************************************************************/
+        const canvas = document.getElementById('raceCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function drawTree(ctx, x, y, scale) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+
+            // Bayangan pohon
+            ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+            ctx.beginPath();
+            ctx.ellipse(6, 26, 28, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Batang kayu
+            ctx.fillStyle = "#78350f";
+            ctx.beginPath();
+            ctx.moveTo(-6, 28);
+            ctx.lineTo(0, -4);
+            ctx.lineTo(6, 28);
+            ctx.closePath();
+            ctx.fill();
+
+            // Rimbunan daun berlapis (gaya kartun seperti referensi)
+            const leafCircles = [
+                { cx: -16, cy: 4, r: 18, col: "#3f6212" },
+                { cx: 16, cy: 4, r: 18, col: "#3f6212" },
+                { cx: 0, cy: 6, r: 22, col: "#4d7c0f" },
+                { cx: -10, cy: -8, r: 17, col: "#65a30d" },
+                { cx: 10, cy: -8, r: 17, col: "#65a30d" },
+                { cx: 0, cy: -15, r: 16, col: "#84cc16" }
+            ];
+            leafCircles.forEach(c => {
+                ctx.fillStyle = c.col;
+                ctx.beginPath();
+                ctx.arc(c.cx, c.cy, c.r, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            ctx.restore();
+        }
+
+        function drawTopDownCar(ctx, x, y, angle, cfg, name, isHuman, isLeader = false) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(angle);
+
+            // Efek sorot cahaya emas lembut di bawah mobil urutan ke-1
+            if (isLeader && gameState === "RACING") {
+                ctx.fillStyle = "rgba(250, 204, 21, 0.28)";
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 36, 22, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Bayangan bawah mobil
+            ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+            ctx.beginPath();
+            ctx.roundRect(-26, -12, 50, 28, 7);
+            ctx.fill();
+
+            // 4 Roda hitam
+            ctx.fillStyle = "#171717";
+            const wheelPositions = [
+                { wx: -16, wy: -15 }, // Belakang kiri
+                { wx: 10,  wy: -15 }, // Depan kiri
+                { wx: -16, wy: 10 },  // Belakang kanan
+                { wx: 10,  wy: 10 }   // Depan kanan
+            ];
+            wheelPositions.forEach(w => {
+                ctx.beginPath();
+                ctx.roundRect(w.wx, w.wy, 11, 5, 2);
+                ctx.fill();
+            });
+
+            // Bodi utama mobil
+            ctx.fillStyle = cfg.primary;
+            ctx.strokeStyle = "#111827";
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.roundRect(-22, -11, 46, 22, 8);
+            ctx.fill();
+            ctx.stroke();
+
+            // Kap dan strip tengah
+            ctx.fillStyle = cfg.secondary;
+            ctx.beginPath();
+            ctx.roundRect(-8, -7, 22, 14, 5);
+            ctx.fill();
+
+            // Sayap Spoiler Belakang dengan motif garis (persis gambar referensi)
+            ctx.fillStyle = cfg.primary;
+            ctx.beginPath();
+            ctx.roundRect(-27, -13, 8, 26, 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Mata kaca depan (Kartun)
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.ellipse(15, -4.5, 3.5, 4, 0, 0, Math.PI * 2);
+            ctx.ellipse(15, 4.5, 3.5, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = "#0f172a";
+            ctx.beginPath();
+            ctx.arc(16.5, -4.5, 1.7, 0, Math.PI * 2);
+            ctx.arc(16.5, 4.5, 1.7, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // Label Nama di atas mobil (+ Mahkota untuk urutan ke-1)
+            ctx.save();
+            ctx.font = "bold 11px Inter, sans-serif";
+            ctx.textAlign = "center";
+            const displayLabel = (isLeader && gameState === "RACING") ? `👑 #1 ${name}` : name;
+            const labelW = ctx.measureText(displayLabel).width + 12;
+            ctx.fillStyle = (isLeader && gameState === "RACING")
+                ? "rgba(161, 98, 7, 0.92)"
+                : (isHuman ? "rgba(15, 23, 42, 0.82)" : "rgba(30, 41, 59, 0.65)");
+            ctx.beginPath();
+            ctx.roundRect(x - labelW / 2, y - 32, labelW, 16, 5);
+            ctx.fill();
+
+            if (isLeader && gameState === "RACING") {
+                ctx.strokeStyle = "#facc15";
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = (isLeader && gameState === "RACING") ? "#fef08a" : (isHuman ? "#ffffff" : "#cbd5e1");
+            ctx.fillText(displayLabel, x, y - 20.5);
+            ctx.restore();
+        }
+
+        function drawCornerMinimap(ctx, canvasW, canvasH) {
+            const mapW = 155;
+            const mapH = 100;
+            const pad = 14;
+            const mx = canvasW - mapW - pad;
+            const my = pad;
+
+            ctx.save();
+            // Latar kotak minimap transparan di pojok kanan atas
+            ctx.fillStyle = "rgba(20, 83, 45, 0.85)";
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(mx, my, mapW, mapH, 14);
+            ctx.fill();
+            ctx.stroke();
+
+            const scaleX = (mapW - 24) / WORLD_W;
+            const scaleY = (mapH - 20) / WORLD_H;
+            const offsetX = mx + 12;
+            const offsetY = my + 10;
+
+            // Gambar jalur lintasan di minimap
+            ctx.beginPath();
+            trackSamples.forEach((pt, idx) => {
+                const px = offsetX + pt.x * scaleX;
+                const py = offsetY + pt.y * scaleY;
+                if (idx === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.lineWidth = 4.5;
+            ctx.lineJoin = "round";
+            ctx.stroke();
+
+            // Titik mobil para pembalap di minimap
+            racers.forEach(r => {
+                const pos = getPointOnTrack(r.distance, 0);
+                const rx = offsetX + pos.x * scaleX;
+                const ry = offsetY + pos.y * scaleY;
+                ctx.fillStyle = r.config.primary;
+                ctx.strokeStyle = "#fff";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(rx, ry, 4.2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+            });
+
+            ctx.restore();
+        }
+
+        function getLeaderRacer() {
+            if (!racers || racers.length === 0) return null;
+            let leader = racers[0];
+            for (let i = 1; i < racers.length; i++) {
+                if (racers[i].distance > leader.distance) {
+                    leader = racers[i];
+                }
+            }
+            return leader;
+        }
+
+        function updateDynamicCamera(dt) {
+            const cw = canvas.width;
+            const ch = canvas.height;
+            const baseOverviewScale = Math.min(cw / WORLD_W, ch / WORLD_H) * 0.96;
+
+            if (gameState === "COUNTDOWN" || gameState === "RACING" || gameState === "FINISHED") {
+                const leader = getLeaderRacer();
+                if (leader) {
+                    // Ambil posisi mobil urutan pertama beserta sedikit antisipasi arah laju di depannya
+                    const leaderPos = getPointOnTrack(leader.distance, leader.laneOffset * 0.35);
+                    const lookAheadDist = gameState === "RACING" ? 65 : 20;
+                    const targetX = leaderPos.x + Math.cos(leaderPos.angle) * lookAheadDist;
+                    const targetY = leaderPos.y + Math.sin(leaderPos.angle) * lookAheadDist;
+
+                    // Zoom dinamis: sekitar 2.15x dari skala normal agar lintasan berkelok & mobil terlihat jelas dan dekat
+                    const targetZoom = baseOverviewScale * (gameState === "COUNTDOWN" ? 1.85 : 2.15);
+
+                    const smoothFactor = 1 - Math.exp(-5.5 * dt);
+                    cameraState.x += (targetX - cameraState.x) * smoothFactor;
+                    cameraState.y += (targetY - cameraState.y) * smoothFactor;
+                    cameraState.zoom += (targetZoom - cameraState.zoom) * smoothFactor;
+                }
+            } else {
+                // Saat di MENU awal, tampilkan seluruh sirkuit secara utuh
+                const targetX = WORLD_W / 2;
+                const targetY = WORLD_H / 2;
+                const targetZoom = baseOverviewScale;
+
+                const smoothFactor = 1 - Math.exp(-5.0 * dt);
+                cameraState.x += (targetX - cameraState.x) * smoothFactor;
+                cameraState.y += (targetY - cameraState.y) * smoothFactor;
+                cameraState.zoom += (targetZoom - cameraState.zoom) * smoothFactor;
+            }
+        }
+
+        function renderScene() {
+            const cw = canvas.width;
+            const ch = canvas.height;
+
+            // Latar belakang rumput hijau segar (seperti gambar referensi)
+            ctx.fillStyle = "#15803d";
+            ctx.fillRect(0, 0, cw, ch);
+
+            // Titik fokus layar sedikit digeser ke atas agar mobil urutan ke-1 tidak tertutup panel soal di bawah
+            const viewportCenterX = cw / 2;
+            const viewportCenterY = (gameState === "MENU") ? (ch / 2) : (ch * 0.38);
+
+            ctx.save();
+            ctx.translate(viewportCenterX, viewportCenterY);
+            ctx.scale(cameraState.zoom, cameraState.zoom);
+            ctx.translate(-cameraState.x, -cameraState.y);
+
+            // 1. Gambar Pinggiran Bahu Jalan (Batu / Rumput Gelap)
+            ctx.beginPath();
+            trackSamples.forEach((pt, i) => {
+                if (i === 0) ctx.moveTo(pt.x, pt.y);
+                else ctx.lineTo(pt.x, pt.y);
+            });
+            ctx.closePath();
+            ctx.lineJoin = "round";
+            ctx.lineCap = "round";
+            ctx.strokeStyle = "#166534";
+            ctx.lineWidth = TRACK_WIDTH + 18;
+            ctx.stroke();
+
+            // 2. Gambar Aspal Lintasan Abu-abu
+            ctx.strokeStyle = "#64748b";
+            ctx.lineWidth = TRACK_WIDTH;
+            ctx.stroke();
+
+            // 3. Gambar Garis Putus-putus Putih di Tengah Jalan
+            ctx.save();
+            ctx.strokeStyle = "#cbd5e1";
+            ctx.lineWidth = 4;
+            ctx.setLineDash([28, 28]);
+            ctx.stroke();
+            ctx.restore();
+
+            // 4. Gambar Garis Start / Finish Kotak-kotak Catur (Checkered Line)
+            const startPt = trackSamples[0];
+            ctx.save();
+            ctx.translate(startPt.x, startPt.y);
+            ctx.rotate(startPt.angle);
+            const checkerRows = 10;
+            const squareSize = TRACK_WIDTH / checkerRows;
+            for (let r = 0; r < checkerRows; r++) {
+                for (let c = 0; c < 2; c++) {
+                    ctx.fillStyle = (r + c) % 2 === 0 ? "#ffffff" : "#0f172a";
+                    ctx.fillRect(-squareSize + c * squareSize, -TRACK_WIDTH / 2 + r * squareSize, squareSize, squareSize);
+                }
+            }
+            ctx.restore();
+
+            // 5. Gambar Pepohonan di Sekeliling Sirkuit
+            trees.forEach(t => drawTree(ctx, t.x, t.y, t.scale));
+
+            // 6. Gambar Partikel Asap Knalpot
+            smokeParticles.forEach(p => {
+                ctx.save();
+                ctx.fillStyle = `rgba(241, 245, 249, ${Math.max(0, p.alpha)})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            });
+
+            // 7. Gambar Mobil Pembalap (dengan penanda mahkota untuk urutan ke-1)
+            const currentLeader = getLeaderRacer();
+            racers.forEach(r => {
+                const pos = getPointOnTrack(r.distance, r.laneOffset);
+                const isLeader = currentLeader && (r.id === currentLeader.id);
+                drawTopDownCar(ctx, pos.x, pos.y, pos.angle, r.config, r.name, r.isHuman, isLeader);
+            });
+
+            // 8. Gambar Efek Teks Melayang (+NGEBUT / SALAH)
+            floatingTexts.forEach(ft => {
+                ctx.save();
+                ctx.font = "900 16px Fredoka, sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillStyle = ft.color;
+                ctx.globalAlpha = Math.max(0, ft.alpha);
+                ctx.strokeStyle = "#000";
+                ctx.lineWidth = 3;
+                ctx.strokeText(ft.text, ft.x, ft.y);
+                ctx.fillText(ft.text, ft.x, ft.y);
+                ctx.restore();
+            });
+
+            ctx.restore();
+
+            // 9. Gambar Minimap di Pojok Kanan Bawah
+            drawCornerMinimap(ctx, cw, ch);
+        }
+
+        // Loop Utama Game
+        let lastFrameTime = performance.now();
+        function gameLoop(now) {
+            const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+            lastFrameTime = now;
+
+            if (gameState === "RACING") {
+                updateRacePhysics(dt);
+            } else if (gameState === "MENU") {
+                // Saat di menu awal, tampilkan mobil berjalan santai sebagai demo latar belakang
+                racers.forEach(r => {
+                    r.distance = (r.distance + 45 * dt) % totalTrackLength;
+                });
+            }
+
+            updateDynamicCamera(dt);
+            renderScene();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Inisialisasi saat halaman dimuat
+        window.onload = function () {
+            resizeCanvas();
+            buildTrackGeometry();
+            selectPlayerCount(1);
+
+            // Tampilkan maskot mobil biru di header menu
+            const mascotEl = document.getElementById('mascotPreview');
+            if (mascotEl) {
+                mascotEl.innerHTML = getCuteCarAvatarSVG(CAR_CONFIGS[0].primary, CAR_CONFIGS[0].secondary, CAR_CONFIGS[0].dark);
+            }
+
+            // Buat 4 mobil demo untuk berputar di lintasan belakang saat di menu
+            racers = CAR_CONFIGS.map((cfg, idx) => ({
+                id: idx,
+                name: cfg.defaultName,
+                isHuman: true,
+                config: cfg,
+                distance: idx * 35,
+                targetDistance: totalTrackLength * 2,
+                laneOffset: cfg.laneOffset
+            }));
+
+            requestAnimationFrame(gameLoop);
+        };
+    </script>
+</body>
+</html>
